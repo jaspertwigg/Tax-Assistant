@@ -1,75 +1,58 @@
-import { doc, setDoc, serverTimestamp, collection, updateDoc } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { db, functions, storage } from "./firebase";
+import { scanReceipt } from "./claude";
+import { newId, put } from "./db";
 
 const MAX_EDGE = 2000;
-const scanReceiptFn = httpsCallable<{ receiptId: string }, { ok: boolean }>(functions, "scanReceipt");
+const THUMB_EDGE = 360;
 
-/** Shrinks photos so uploads are fast and fit the model's image limits. PDFs and GIFs pass through. */
-async function prepareFile(file: File): Promise<{ blob: Blob; contentType: string; name: string }> {
+async function resize(bitmap: ImageBitmap, maxEdge: number, quality: number): Promise<Blob> {
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/jpeg", quality));
+}
+
+/** Shrinks photos so they save space on the phone and fit Claude's image limits. PDFs and GIFs are kept as-is. */
+async function prepareFile(file: File): Promise<{ blob: Blob; thumb: Blob | null; contentType: string }> {
   if (!file.type.startsWith("image/") || file.type === "image/gif") {
-    return { blob: file, contentType: file.type || "application/octet-stream", name: file.name };
+    return { blob: file, thumb: null, contentType: file.type || "application/octet-stream" };
   }
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const [blob, thumb] = await Promise.all([resize(bitmap, MAX_EDGE, 0.85), resize(bitmap, THUMB_EDGE, 0.7)]);
     bitmap.close();
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/jpeg", 0.85),
-    );
-    return { blob, contentType: "image/jpeg", name: file.name.replace(/\.[^.]+$/, "") + ".jpg" };
+    return { blob, thumb, contentType: "image/jpeg" };
   } catch {
-    return { blob: file, contentType: file.type, name: file.name };
+    return { blob: file, thumb: null, contentType: file.type };
   }
 }
 
-export function scanReceipt(receiptId: string) {
-  return scanReceiptFn({ receiptId });
-}
-
-/** Uploads a receipt file, creates its record and asks Claude to read it. Returns the new receipt id. */
-export async function uploadReceipt(uid: string, file: File, defaults: { currency: string }): Promise<string> {
-  const receiptRef = doc(collection(db, "users", uid, "receipts"));
-  const { blob, contentType, name } = await prepareFile(file);
-  const safeName = name.replace(/[^\w.\-]+/g, "_").slice(-80) || "receipt";
-  const storagePath = `users/${uid}/receipts/${receiptRef.id}/${safeName}`;
-
-  await setDoc(receiptRef, {
+/** Saves a receipt photo/PDF on the phone and, if a key is set, asks Claude to read it. */
+export async function addReceipt(file: File, opts: { apiKey: string; currency: string }): Promise<string> {
+  const id = newId();
+  const { blob, thumb, contentType } = await prepareFile(file);
+  await put("files", { id, contentType, blob, thumb });
+  await put("receipts", {
+    id,
     merchant: "",
     date: "",
     amount: null,
     taxAmount: null,
-    currency: "",
+    currency: opts.apiKey ? "" : opts.currency,
     category: "",
     labels: [],
     notes: "",
     deductible: null,
-    storagePath,
     fileName: file.name,
     contentType,
-    downloadUrl: "",
-    status: "uploading",
-    createdAt: serverTimestamp(),
+    status: opts.apiKey ? "scanning" : "ready",
+    scanError: opts.apiKey ? null : "Fill in the details, or add your Claude API key in Settings to have receipts read automatically.",
+    createdAt: Date.now(),
   });
-
-  const fileRef = ref(storage, storagePath);
-  await uploadBytes(fileRef, blob, { contentType });
-  const downloadUrl = await getDownloadURL(fileRef);
-  await updateDoc(receiptRef, { downloadUrl, status: "scanning" });
-
-  try {
-    await scanReceipt(receiptRef.id);
-  } catch (err) {
-    await updateDoc(receiptRef, {
-      status: "ready",
-      currency: defaults.currency,
-      scanError: err instanceof Error ? `Auto-scan failed: ${err.message}` : "Auto-scan failed — fill in the details manually.",
-    });
+  if (opts.apiKey) {
+    // Errors are recorded on the receipt itself; the upload still succeeded.
+    await scanReceipt(opts.apiKey, id).catch(() => undefined);
   }
-  return receiptRef.id;
+  return id;
 }

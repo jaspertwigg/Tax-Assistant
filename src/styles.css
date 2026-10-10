@@ -1035,3 +1035,32 @@ tr.clickable:hover td {
     font-size: 1.15rem;
   }
 }
+
+.key-row {
+  display: flex;
+  gap: 8px;
+}
+label.btn {
+  flex-direction: row;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .chat-page .page-header {
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .chat-page .page-header h1 {
+    font-size: 1.3rem;
+  }
+  .chat-page .page-header p {
+    font-size: 0.8rem;
+    margin: 0;
+  }
+  .chat-page .page-header .btn {
+    padding: 5px 10px;
+    font-size: 0.85rem;
+  }
+}

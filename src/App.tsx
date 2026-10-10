@@ -1,9 +1,7 @@
-import { onAuthStateChanged, User } from "firebase/auth";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { recentTaxYears } from "./lib/countries";
-import { AppContext, currentTaxYear, TaxYear, useProfile } from "./lib/data";
-import { auth, firebaseConfigured } from "./lib/firebase";
+import { AppContext, currentTaxYear, TaxYear, useSettings } from "./lib/data";
 import ChatPage from "./pages/Chat";
 import Dashboard from "./pages/Dashboard";
 import Deadlines from "./pages/Deadlines";
@@ -11,7 +9,6 @@ import IncomePage from "./pages/Income";
 import MileagePage from "./pages/Mileage";
 import Receipts from "./pages/Receipts";
 import SettingsPage from "./pages/Settings";
-import SignIn from "./pages/SignIn";
 
 const NAV = [
   { to: "/", label: "Overview", icon: "◧" },
@@ -24,17 +21,7 @@ const NAV = [
 ];
 
 export default function App() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  useEffect(() => onAuthStateChanged(auth, setUser), []);
-
-  if (!firebaseConfigured) return <SetupNeeded />;
-  if (user === undefined) return <div className="splash">Loading…</div>;
-  if (!user) return <SignIn />;
-  return <SignedIn user={user} />;
-}
-
-function SignedIn({ user }: { user: User }) {
-  const { profile, loaded } = useProfile(user.uid);
+  const { profile, apiKey, loaded } = useSettings();
   const [chosenYear, setTaxYear] = useState<TaxYear | null>(null);
   const years = useMemo(() => recentTaxYears(profile.country), [profile.country]);
   // Reset to the current year if the country (and so the year boundaries) changes.
@@ -56,11 +43,11 @@ function SignedIn({ user }: { user: User }) {
   );
 
   return (
-    <AppContext.Provider value={{ user, profile, taxYear, setTaxYear }}>
+    <AppContext.Provider value={{ profile, apiKey, taxYear, setTaxYear }}>
       <div className="shell">
         <aside className="sidebar">
           <div className="brand">
-            <img src="/icon.svg" alt="" width={28} height={28} />
+            <img src="icon.svg" alt="" width={28} height={28} />
             <span>Tax Assistant</span>
           </div>
           {yearPicker}
@@ -78,7 +65,7 @@ function SignedIn({ user }: { user: User }) {
         <main className="content">
           <div className="mobile-bar">
             <div className="brand">
-              <img src="/icon.svg" alt="" width={24} height={24} />
+              <img src="icon.svg" alt="" width={24} height={24} />
               <span>Tax Assistant</span>
             </div>
             {yearPicker}
@@ -96,19 +83,5 @@ function SignedIn({ user }: { user: User }) {
         </main>
       </div>
     </AppContext.Provider>
-  );
-}
-
-function SetupNeeded() {
-  return (
-    <div className="center-card">
-      <div className="card">
-        <h1>Almost there</h1>
-        <p>
-          This app needs a Firebase project. Copy <code>.env.example</code> to <code>.env.local</code>, fill in your Firebase
-          web-app config, and restart the dev server. See the README for the full setup steps.
-        </p>
-      </div>
-    </div>
   );
 }

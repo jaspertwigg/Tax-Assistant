@@ -1,9 +1,8 @@
-import { addDoc, collection, deleteDoc, doc, orderBy, serverTimestamp, updateDoc } from "firebase/firestore";
 import { FormEvent, useState } from "react";
 import { COUNTRIES } from "../lib/countries";
 import { upcomingDeadlines } from "../lib/deadlines";
-import { useApp, useUserCollection } from "../lib/data";
-import { db } from "../lib/firebase";
+import { useApp, useRecords } from "../lib/data";
+import { newId, patch, put, remove } from "../lib/db";
 import { daysUntil, formatDate } from "../lib/format";
 import type { Reminder } from "../lib/types";
 
@@ -15,17 +14,17 @@ function when(days: number): string {
 }
 
 export default function Deadlines() {
-  const { user, profile } = useApp();
+  const { profile } = useApp();
   const country = COUNTRIES[profile.country];
   const deadlines = upcomingDeadlines(profile.country);
-  const reminders = useUserCollection<Reminder>(user.uid, "reminders", [orderBy("date", "asc")], []);
+  const reminders = useRecords<Reminder>("reminders", (a, b) => a.date.localeCompare(b.date));
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
 
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!title.trim() || !date) return;
-    await addDoc(collection(db, "users", user.uid, "reminders"), { title: title.trim(), date, done: false, createdAt: serverTimestamp() });
+    await put("reminders", { id: newId(), title: title.trim(), date, done: false, createdAt: Date.now() });
     setTitle("");
     setDate("");
   }
@@ -78,7 +77,7 @@ export default function Deadlines() {
             {reminders.items.map((r) => (
               <li key={r.id} className={r.done ? "done" : ""}>
                 <label className="checkbox">
-                  <input type="checkbox" checked={r.done} onChange={(e) => updateDoc(doc(db, "users", user.uid, "reminders", r.id), { done: e.target.checked })} />
+                  <input type="checkbox" checked={r.done} onChange={(e) => patch("reminders", r.id, { done: e.target.checked })} />
                   <span>
                     {r.title}
                     <span className="muted small">
@@ -87,7 +86,7 @@ export default function Deadlines() {
                     </span>
                   </span>
                 </label>
-                <button className="icon-btn" aria-label="Delete reminder" onClick={() => deleteDoc(doc(db, "users", user.uid, "reminders", r.id))}>
+                <button className="icon-btn" aria-label="Delete reminder" onClick={() => remove("reminders", r.id)}>
                   ×
                 </button>
               </li>

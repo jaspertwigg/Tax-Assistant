@@ -1,9 +1,4 @@
 node_modules/
 dist/
-.env
-.env.local
-.firebase/
+*.tsbuildinfo
 *-debug.log
-functions/lib/
-functions/node_modules/
-tsconfig.tsbuildinfo

@@ -1,11 +1,10 @@
-import { limit, orderBy } from "firebase/firestore";
 import { DragEvent, useMemo, useRef, useState } from "react";
 import ReceiptEditor from "../components/ReceiptEditor";
 import { CATEGORIES } from "../lib/countries";
-import { useApp, useUserCollection } from "../lib/data";
+import { byDateDesc, useApp, useFileUrl, useRecords } from "../lib/data";
 import { formatDate, formatMoney } from "../lib/format";
 import type { Receipt } from "../lib/types";
-import { uploadReceipt } from "../lib/upload";
+import { addReceipt } from "../lib/upload";
 
 type Scope = "year" | "all" | "review";
 
@@ -14,8 +13,8 @@ export function needsReview(r: Receipt): boolean {
 }
 
 export default function Receipts() {
-  const { user, profile, taxYear } = useApp();
-  const { items, loading, error } = useUserCollection<Receipt>(user.uid, "receipts", [orderBy("createdAt", "desc"), limit(2000)], []);
+  const { profile, apiKey, taxYear } = useApp();
+  const { items, loading } = useRecords<Receipt>("receipts", byDateDesc);
   const [scope, setScope] = useState<Scope>("year");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -38,8 +37,7 @@ export default function Receipts() {
         if (label && !(r.labels ?? []).includes(label)) return false;
         if (q && ![r.merchant, r.notes, r.category, ...(r.labels ?? [])].join(" ").toLowerCase().includes(q)) return false;
         return true;
-      })
-      .sort((a, b) => (b.date || "9999").localeCompare(a.date || "9999"));
+      });
   }, [items, scope, search, category, label, taxYear]);
 
   const total = visible.reduce((s, r) => s + (r.amount ?? 0), 0);
@@ -53,7 +51,7 @@ export default function Receipts() {
     await Promise.all(
       list.map(async (f) => {
         try {
-          await uploadReceipt(user.uid, f, { currency: profile.currency });
+          await addReceipt(f, { apiKey, currency: profile.currency });
           setUploads((u) => u.map((x) => (x.name === f.name && x.state === "uploading" ? { ...x, state: "done" } : x)));
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -82,7 +80,9 @@ export default function Receipts() {
       <header className="page-header">
         <div>
           <h1>Receipts</h1>
-          <p className="muted">Snap or upload a receipt and Claude reads the merchant, date, total, tax and category for you.</p>
+          <p className="muted">
+            Snap or upload a receipt{apiKey ? " and Claude reads the merchant, date, total, tax and category for you" : ""}. Photos stay on this phone.
+          </p>
         </div>
         <div className="actions">
           <button className="btn primary" onClick={() => cameraRef.current?.click()}>
@@ -121,7 +121,7 @@ export default function Receipts() {
           {uploads.map((u, i) => (
             <div key={i} className={`upload-item ${u.state}`}>
               <span>{u.name}</span>
-              <span>{u.state === "uploading" ? "Uploading & scanning…" : u.state === "done" ? "Added ✓" : `Failed: ${u.message}`}</span>
+              <span>{u.state === "uploading" ? apiKey ? "Saving & reading…" : "Saving…" : u.state === "done" ? "Added ✓" : `Failed: ${u.message}`}</span>
             </div>
           ))}
           <button className="link small" onClick={() => setUploads([])}>
@@ -161,7 +161,6 @@ export default function Receipts() {
         {visible.length} receipt{visible.length === 1 ? "" : "s"} · {formatMoney(total, profile.currency)}
       </p>
 
-      {error && <p className="error">{error}</p>}
       {loading ? (
         <p className="muted">Loading…</p>
       ) : visible.length === 0 ? (
@@ -173,13 +172,7 @@ export default function Receipts() {
         <div className="receipt-grid">
           {visible.map((r) => (
             <button key={r.id} className="receipt-card" onClick={() => setOpenId(r.id)}>
-              <div className="thumb">
-                {r.downloadUrl && r.contentType.startsWith("image/") ? (
-                  <img src={r.downloadUrl} alt="" loading="lazy" />
-                ) : (
-                  <span>{r.contentType === "application/pdf" ? "PDF" : "…"}</span>
-                )}
-              </div>
+              <Thumb receipt={r} />
               <div className="receipt-info">
                 <div className="receipt-top">
                   <strong>{r.merchant || (r.status === "ready" ? "Unknown merchant" : "Reading…")}</strong>
@@ -190,7 +183,7 @@ export default function Receipts() {
                   {r.deductible === false && " · personal"}
                 </div>
                 <div className="chips">
-                  {r.status !== "ready" && <span className="badge info">{r.status === "uploading" ? "Uploading" : "Scanning"}</span>}
+                  {r.status === "scanning" && <span className="badge info">Reading…</span>}
                   {needsReview(r) && <span className="badge warn">Check</span>}
                   {(r.labels ?? []).map((l) => (
                     <span key={l} className="chip small">
@@ -207,4 +200,10 @@ export default function Receipts() {
       {open && <ReceiptEditor key={open.id + open.status} receipt={open} allLabels={allLabels} onClose={() => setOpenId(null)} />}
     </div>
   );
+}
+
+function Thumb({ receipt }: { receipt: Receipt }) {
+  const isImage = receipt.contentType.startsWith("image/");
+  const url = useFileUrl(isImage ? receipt.id : undefined, "thumb");
+  return <div className="thumb">{url ? <img src={url} alt="" /> : <span>{isImage ? "…" : "PDF"}</span>}</div>;
 }

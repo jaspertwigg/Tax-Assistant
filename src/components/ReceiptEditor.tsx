@@ -1,22 +1,21 @@
-import { deleteDoc, doc, updateDoc } from "firebase/firestore";
-import { deleteObject, ref } from "firebase/storage";
 import { FormEvent, useState } from "react";
+import { scanReceipt } from "../lib/claude";
 import { CATEGORIES } from "../lib/countries";
-import { useApp } from "../lib/data";
-import { db, storage } from "../lib/firebase";
+import { useApp, useFileUrl } from "../lib/data";
+import { patch, remove } from "../lib/db";
 import { parseAmount } from "../lib/format";
 import type { Receipt } from "../lib/types";
-import { scanReceipt } from "../lib/upload";
 import LabelInput from "./LabelInput";
 import Modal from "./Modal";
 
 export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt: Receipt; allLabels: string[]; onClose: () => void }) {
-  const { user, profile } = useApp();
+  const { profile, apiKey } = useApp();
+  const fileUrl = useFileUrl(receipt.id, "full");
   const [form, setForm] = useState({
     merchant: receipt.merchant,
     date: receipt.date,
-    amount: receipt.amount?.toString() ?? "",
-    taxAmount: receipt.taxAmount?.toString() ?? "",
+    amount: receipt.amount?.toFixed(2) ?? "",
+    taxAmount: receipt.taxAmount?.toFixed(2) ?? "",
     currency: receipt.currency || profile.currency,
     category: receipt.category,
     labels: receipt.labels ?? [],
@@ -26,7 +25,6 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const docRef = doc(db, "users", user.uid, "receipts", receipt.id);
 
   async function act(label: string, fn: () => Promise<unknown>, close = true) {
     setBusy(label);
@@ -44,7 +42,7 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
   function save(e: FormEvent) {
     e.preventDefault();
     act("save", () =>
-      updateDoc(docRef, {
+      patch("receipts", receipt.id, {
         merchant: form.merchant.trim(),
         date: form.date,
         amount: parseAmount(form.amount),
@@ -65,18 +63,18 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
     <Modal title={receipt.merchant || "Receipt"} onClose={onClose}>
       <div className="editor">
         <div className="editor-preview">
-          {receipt.downloadUrl ? (
+          {fileUrl ? (
             isImage ? (
-              <a href={receipt.downloadUrl} target="_blank" rel="noreferrer">
-                <img src={receipt.downloadUrl} alt="Receipt" />
+              <a href={fileUrl} target="_blank" rel="noreferrer">
+                <img src={fileUrl} alt="Receipt" />
               </a>
             ) : (
-              <a className="pdf-tile" href={receipt.downloadUrl} target="_blank" rel="noreferrer">
+              <a className="pdf-tile" href={fileUrl} target="_blank" rel="noreferrer">
                 📄 Open {receipt.fileName}
               </a>
             )
           ) : (
-            <div className="pdf-tile">Uploading…</div>
+            <div className="pdf-tile">Loading…</div>
           )}
           {receipt.ai?.confidence && (
             <p className="muted small">
@@ -139,8 +137,9 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
             <button
               type="button"
               className="btn"
-              disabled={!!busy || !receipt.downloadUrl}
-              onClick={() => act("scan", () => scanReceipt(receipt.id))}
+              disabled={!!busy || !apiKey}
+              title={apiKey ? undefined : "Add your Claude API key in Settings"}
+              onClick={() => act("scan", () => scanReceipt(apiKey, receipt.id))}
             >
               {busy === "scan" ? "Scanning…" : "Re-scan with Claude"}
             </button>
@@ -151,8 +150,8 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
               onClick={() =>
                 confirm("Delete this receipt and its image? This can't be undone.") &&
                 act("delete", async () => {
-                  if (receipt.storagePath) await deleteObject(ref(storage, receipt.storagePath)).catch(() => undefined);
-                  await deleteDoc(docRef);
+                  await remove("files", receipt.id);
+                  await remove("receipts", receipt.id);
                 })
               }
             >

@@ -1,13 +1,12 @@
-import { addDoc, collection, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { FormEvent, useState } from "react";
-import { useApp, useYearCollection } from "../lib/data";
-import { db } from "../lib/firebase";
+import { useApp, useYearRecords } from "../lib/data";
+import { newId, put, remove } from "../lib/db";
 import { formatDate, formatMoney, todayIso } from "../lib/format";
 import type { Trip } from "../lib/types";
 
 export default function MileagePage() {
-  const { user, profile } = useApp();
-  const { items, loading, error } = useYearCollection<Trip>("mileage");
+  const { profile } = useApp();
+  const { items, loading } = useYearRecords<Trip>("mileage");
   const [form, setForm] = useState({ date: todayIso(), from: "", to: "", purpose: "", distance: "", returnTrip: false });
   const [saving, setSaving] = useState(false);
   const total = items.reduce((s, t) => s + (t.distance ?? 0), 0);
@@ -19,13 +18,14 @@ export default function MileagePage() {
     if (!Number.isFinite(d) || d <= 0) return;
     setSaving(true);
     try {
-      await addDoc(collection(db, "users", user.uid, "mileage"), {
+      await put("mileage", {
+        id: newId(),
         date: form.date,
         from: form.from.trim(),
         to: form.to.trim(),
         purpose: form.purpose.trim(),
         distance: Math.round(d * (form.returnTrip ? 2 : 1) * 10) / 10,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
       setForm((f) => ({ ...f, from: "", to: "", purpose: "", distance: "", returnTrip: false }));
     } finally {
@@ -60,7 +60,6 @@ export default function MileagePage() {
         </button>
       </form>
 
-      {error && <p className="error">{error}</p>}
       {loading ? (
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
@@ -90,7 +89,7 @@ export default function MileagePage() {
                     <button
                       className="icon-btn"
                       aria-label="Delete trip"
-                      onClick={() => confirm("Delete this trip?") && deleteDoc(doc(db, "users", user.uid, "mileage", t.id))}
+                      onClick={() => confirm("Delete this trip?") && remove("mileage", t.id)}
                     >
                       ×
                     </button>

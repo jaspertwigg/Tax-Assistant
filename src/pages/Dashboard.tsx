@@ -1,16 +1,17 @@
 import { Link } from "react-router-dom";
-import { downloadText, toCsv } from "../lib/csv";
+import { saveFile } from "../lib/backup";
+import { toCsv } from "../lib/csv";
 import { upcomingDeadlines } from "../lib/deadlines";
-import { useApp, useYearCollection } from "../lib/data";
+import { useApp, useYearRecords } from "../lib/data";
 import { daysUntil, formatDate, formatMoney } from "../lib/format";
 import type { Income, Receipt, Trip } from "../lib/types";
 import { needsReview } from "./Receipts";
 
 export default function Dashboard() {
-  const { profile, taxYear } = useApp();
-  const receipts = useYearCollection<Receipt>("receipts");
-  const income = useYearCollection<Income>("income");
-  const trips = useYearCollection<Trip>("mileage");
+  const { profile, apiKey, taxYear } = useApp();
+  const receipts = useYearRecords<Receipt>("receipts");
+  const income = useYearRecords<Income>("income");
+  const trips = useYearRecords<Trip>("mileage");
   const cur = profile.currency;
 
   const claimable = receipts.items.filter((r) => r.deductible !== false);
@@ -31,27 +32,18 @@ export default function Dashboard() {
   const deadlines = upcomingDeadlines(profile.country).filter((d) => daysUntil(d.date) >= 0).slice(0, 3);
   const slug = taxYear.label.replace("/", "-");
 
-  function exportAll() {
-    downloadText(
-      `receipts-${slug}.csv`,
+  async function exportAll() {
+    await saveFile(
       toCsv(
-        ["Date", "Merchant", "Category", "Total", "Tax included", "Currency", "Claimable", "Labels", "Notes", "File"],
-        receipts.items.map((r) => [r.date, r.merchant, r.category, r.amount, r.taxAmount, r.currency, r.deductible === false ? "No" : "Yes", r.labels, r.notes, r.downloadUrl]),
+        ["Type", "Date", "Description", "Category / income type", "Amount", "Tax included / deducted", "Currency", "Claimable", "Labels", "Notes"],
+        [
+          ...receipts.items.map((r) => ["Expense", r.date, r.merchant, r.category, r.amount, r.taxAmount, r.currency || cur, r.deductible === false ? "No" : "Yes", r.labels, r.notes]),
+          ...income.items.map((i) => ["Income", i.date, i.source, i.type, i.amount, i.taxPaid, cur, "", "", i.notes]),
+          ...trips.items.map((t) => ["Mileage", t.date, [t.from, t.to].filter(Boolean).join(" to "), t.purpose, t.distance, "", profile.distanceUnit, "", "", ""]),
+        ],
       ),
+      `tax-year-${slug}.csv`,
     );
-    if (income.items.length)
-      downloadText(
-        `income-${slug}.csv`,
-        toCsv(["Date", "Source", "Type", "Amount", "Tax already deducted", "Notes"], income.items.map((i) => [i.date, i.source, i.type, i.amount, i.taxPaid, i.notes])),
-      );
-    if (trips.items.length)
-      downloadText(
-        `mileage-${slug}.csv`,
-        toCsv(
-          ["Date", "From", "To", "Purpose", `Distance (${profile.distanceUnit})`],
-          trips.items.map((t) => [t.date, t.from, t.to, t.purpose, t.distance]),
-        ),
-      );
   }
 
   return (
@@ -73,6 +65,11 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {!apiKey && (
+        <Link to="/settings" className="notice">
+          Add your Claude API key in Settings to have receipts read automatically and to chat with Claude →
+        </Link>
+      )}
       {review > 0 && (
         <Link to="/receipts" className="notice">
           {review} receipt{review === 1 ? "" : "s"} need a quick check (missing date, amount or category). →

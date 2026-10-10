@@ -1,9 +1,7 @@
-import { collection, doc, onSnapshot, orderBy, query, QueryConstraint, where } from "firebase/firestore";
 import { createContext, useContext, useEffect, useState } from "react";
-import type { User } from "firebase/auth";
 import { COUNTRIES, taxYearBounds } from "./countries";
-import { db } from "./firebase";
-import type { Profile } from "./types";
+import { get, getAll, getSetting, RecordStore, subscribe } from "./db";
+import type { Profile, StoredFile } from "./types";
 
 export const DEFAULT_PROFILE: Profile = {
   country: "UK",
@@ -20,8 +18,8 @@ export interface TaxYear {
 }
 
 export interface AppState {
-  user: User;
   profile: Profile;
+  apiKey: string;
   taxYear: TaxYear;
   setTaxYear: (y: TaxYear) => void;
 }
@@ -34,51 +32,79 @@ export function useApp(): AppState {
   return ctx;
 }
 
-export function useProfile(uid: string): { profile: Profile; loaded: boolean } {
-  const [state, setState] = useState<{ profile: Profile; loaded: boolean }>({ profile: DEFAULT_PROFILE, loaded: false });
-  useEffect(
-    () =>
-      onSnapshot(
-        doc(db, "users", uid),
-        (snap) => setState({ profile: { ...DEFAULT_PROFILE, ...(snap.data() as Partial<Profile>) }, loaded: true }),
-        () => setState((s) => ({ ...s, loaded: true })),
-      ),
-    [uid],
-  );
-  return state;
-}
-
 export function currentTaxYear(profile: Profile): TaxYear {
   return taxYearBounds(profile.country in COUNTRIES ? profile.country : "UK");
 }
 
-/** Live-subscribes to a sub-collection under the signed-in user. */
-export function useUserCollection<T extends { id: string }>(
-  uid: string,
-  name: string,
-  constraints: QueryConstraint[],
-  deps: unknown[],
-): { items: T[]; loading: boolean; error: string | null } {
-  const [state, setState] = useState<{ items: T[]; loading: boolean; error: string | null }>({ items: [], loading: true, error: null });
+export async function loadProfile(): Promise<Profile> {
+  return { ...DEFAULT_PROFILE, ...((await getSetting<Partial<Profile>>("profile")) ?? {}) };
+}
+
+/** Profile and API key, kept live as they change. */
+export function useSettings(): { profile: Profile; apiKey: string; loaded: boolean } {
+  const [state, setState] = useState({ profile: DEFAULT_PROFILE, apiKey: "", loaded: false });
   useEffect(() => {
-    setState((s) => ({ ...s, loading: true }));
-    return onSnapshot(
-      query(collection(db, "users", uid, name), ...constraints),
-      (snap) => setState({ items: snap.docs.map((d) => ({ ...(d.data() as Omit<T, "id">), id: d.id }) as T), loading: false, error: null }),
-      (err) => setState({ items: [], loading: false, error: err.message }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, name, ...deps]);
+    let alive = true;
+    const load = async () => {
+      const [profile, apiKey] = await Promise.all([loadProfile(), getSetting<string>("apiKey")]);
+      if (alive) setState({ profile, apiKey: apiKey ?? "", loaded: true });
+    };
+    load();
+    const unsub = subscribe("settings", load);
+    return () => {
+      alive = false;
+      unsub();
+    };
+  }, []);
   return state;
 }
 
+/** All records in a store, re-read whenever the store changes. */
+export function useRecords<T>(store: RecordStore, sort: (a: T, b: T) => number): { items: T[]; loading: boolean } {
+  const [state, setState] = useState<{ items: T[]; loading: boolean }>({ items: [], loading: true });
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const items = (await getAll(store)) as T[];
+      if (alive) setState({ items: items.sort(sort), loading: false });
+    };
+    load();
+    const unsub = subscribe(store, load);
+    return () => {
+      alive = false;
+      unsub();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store]);
+  return state;
+}
+
+export const byDateDesc = <T extends { date: string; createdAt: number }>(a: T, b: T) =>
+  (b.date || "9999").localeCompare(a.date || "9999") || b.createdAt - a.createdAt;
+
 /** Records dated within the selected tax year, newest first. */
-export function useYearCollection<T extends { id: string }>(name: string) {
-  const { user, taxYear } = useApp();
-  return useUserCollection<T>(
-    user.uid,
-    name,
-    [where("date", ">=", taxYear.start), where("date", "<=", taxYear.end), orderBy("date", "desc")],
-    [taxYear.start, taxYear.end],
-  );
+export function useYearRecords<T extends { date: string; createdAt: number }>(store: RecordStore) {
+  const { taxYear } = useApp();
+  const { items, loading } = useRecords<T>(store, byDateDesc);
+  return { items: items.filter((r) => r.date >= taxYear.start && r.date <= taxYear.end), loading };
+}
+
+/** An object URL for a stored receipt image, released when no longer shown. */
+export function useFileUrl(id: string | undefined, kind: "thumb" | "full"): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setUrl(null);
+    if (!id) return;
+    let alive = true;
+    let created: string | null = null;
+    get("files", id).then((f: StoredFile | undefined) => {
+      const blob = f && (kind === "thumb" ? (f.thumb ?? f.blob) : f.blob);
+      if (alive && blob) setUrl((created = URL.createObjectURL(blob)));
+    });
+    return () => {
+      alive = false;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [id, kind]);
+  return url;
 }

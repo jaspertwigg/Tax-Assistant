@@ -1,14 +1,12 @@
-import { deleteDoc, doc, limit, orderBy } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link } from "react-router-dom";
+import { askClaude } from "../lib/claude";
 import { COUNTRIES } from "../lib/countries";
-import { useApp, useUserCollection } from "../lib/data";
-import { db, functions } from "../lib/firebase";
+import { useApp, useRecords } from "../lib/data";
+import { clearAll } from "../lib/db";
 import type { ChatMessage } from "../lib/types";
-
-const chatFn = httpsCallable<{ message: string }, { reply: string }>(functions, "chat", { timeout: 300_000 });
 
 const SUGGESTIONS = [
   "Summarise my expenses for this tax year",
@@ -20,16 +18,13 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatPage() {
-  const { user, profile } = useApp();
-  const { items, loading } = useUserCollection<ChatMessage>(user.uid, "chatMessages", [orderBy("createdAt", "asc"), limit(200)], []);
+  const { profile, apiKey } = useApp();
+  const { items, loading } = useRecords<ChatMessage>("chat", (a, b) => a.createdAt - b.createdAt);
   const [draft, setDraft] = useState("");
-  const [pending, setPending] = useState<{ text: string; from: number } | null>(null);
+  const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Show the question immediately; hide this copy once the server-saved one arrives.
-  const showPending = pending !== null && !items.slice(pending.from).some((m) => m.role === "user" && m.content === pending.text);
-  const waiting = pending !== null;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -40,14 +35,13 @@ export default function ChatPage() {
     if (!message || waiting) return;
     setDraft("");
     setError(null);
-    setPending({ text: message, from: items.length });
+    setWaiting(true);
     try {
-      await chatFn({ message });
+      await askClaude(apiKey, message);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setDraft(message);
     } finally {
-      setPending(null);
+      setWaiting(false);
     }
   }
 
@@ -65,7 +59,7 @@ export default function ChatPage() {
 
   async function clearChat() {
     if (!confirm("Clear the whole conversation?")) return;
-    await Promise.all(items.map((m) => deleteDoc(doc(db, "users", user.uid, "chatMessages", m.id))));
+    await clearAll(["chat"]);
   }
 
   return (
@@ -85,6 +79,11 @@ export default function ChatPage() {
         )}
       </header>
 
+      {!apiKey && (
+        <Link to="/settings" className="notice">
+          Add your Claude API key in Settings to start chatting →
+        </Link>
+      )}
       <div className="chat-log">
         {loading ? (
           <p className="muted">Loading…</p>
@@ -93,7 +92,7 @@ export default function ChatPage() {
             <p>Try asking:</p>
             <div className="suggestions-grid">
               {SUGGESTIONS.map((s) => (
-                <button key={s} className="suggestion" onClick={() => send(s)}>
+                <button key={s} className="suggestion" disabled={!apiKey} onClick={() => send(s)}>
                   {s}
                 </button>
               ))}
@@ -102,7 +101,6 @@ export default function ChatPage() {
         ) : (
           items.map((m) => <Bubble key={m.id} m={m} />)
         )}
-        {showPending && <Bubble m={{ id: "pending", role: "user", content: pending!.text }} />}
         {waiting && (
           <div className="bubble assistant thinking">
             <span className="dots">
@@ -126,7 +124,7 @@ export default function ChatPage() {
           onKeyDown={onKey}
           maxLength={8000}
         />
-        <button className="btn primary" disabled={waiting || !draft.trim()}>
+        <button className="btn primary" disabled={waiting || !draft.trim() || !apiKey}>
           Send
         </button>
       </form>

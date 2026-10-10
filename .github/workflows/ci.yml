@@ -2,8 +2,6 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
 
 jobs:
   check:
@@ -14,12 +12,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            functions/package-lock.json
       - run: npm ci
-      - run: npm ci --prefix functions
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm run build --prefix functions

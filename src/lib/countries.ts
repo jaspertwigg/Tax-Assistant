@@ -1,5 +1,3 @@
-// Kept in sync with functions/src/countries.ts.
-
 export type CountryCode = "UK" | "AU" | "US" | "IE" | "NZ" | "CA" | "OTHER";
 
 export interface CountryProfile {

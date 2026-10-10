@@ -1,4 +1,3 @@
-import type { Timestamp } from "firebase/firestore";
 import type { CountryCode } from "./countries";
 
 export interface Profile {
@@ -20,14 +19,20 @@ export interface Receipt {
   labels: string[];
   notes: string;
   deductible: boolean | null;
-  storagePath: string;
   fileName: string;
   contentType: string;
-  downloadUrl: string;
-  status: "uploading" | "scanning" | "ready";
-  scanError?: string;
+  status: "scanning" | "ready";
+  scanError?: string | null;
   ai?: { confidence?: string; summary?: string };
-  createdAt?: Timestamp;
+  createdAt: number;
+}
+
+/** The photo/PDF behind a receipt, stored separately so lists stay fast. */
+export interface StoredFile {
+  id: string;
+  contentType: string;
+  blob: Blob;
+  thumb: Blob | null;
 }
 
 export interface Income {
@@ -38,6 +43,7 @@ export interface Income {
   amount: number;
   taxPaid: number | null;
   notes: string;
+  createdAt: number;
 }
 
 export interface Trip {
@@ -47,6 +53,7 @@ export interface Trip {
   to: string;
   purpose: string;
   distance: number;
+  createdAt: number;
 }
 
 export interface Reminder {
@@ -54,6 +61,7 @@ export interface Reminder {
   date: string;
   title: string;
   done: boolean;
+  createdAt: number;
 }
 
 export interface ChatMessage {
@@ -61,7 +69,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sources?: { url: string; title: string }[];
-  createdAt?: Timestamp;
+  createdAt: number;
 }
 
 export const INCOME_TYPES = [

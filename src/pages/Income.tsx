@@ -1,16 +1,15 @@
-import { addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { FormEvent, useState } from "react";
 import Modal from "../components/Modal";
-import { useApp, useYearCollection } from "../lib/data";
-import { db } from "../lib/firebase";
+import { useApp, useYearRecords } from "../lib/data";
+import { newId, patch, put, remove } from "../lib/db";
 import { formatDate, formatMoney, parseAmount, todayIso } from "../lib/format";
 import { INCOME_TYPES, type Income } from "../lib/types";
 
 const EMPTY = { date: todayIso(), source: "", type: INCOME_TYPES[0], amount: "", taxPaid: "", notes: "" };
 
 export default function IncomePage() {
-  const { user, profile } = useApp();
-  const { items, loading, error } = useYearCollection<Income>("income");
+  const { profile } = useApp();
+  const { items, loading } = useYearRecords<Income>("income");
   const [editing, setEditing] = useState<{ id: string | null; form: typeof EMPTY } | null>(null);
   const total = items.reduce((s, i) => s + (i.amount ?? 0), 0);
 
@@ -42,7 +41,6 @@ export default function IncomePage() {
         ))}
       </section>
 
-      {error && <p className="error">{error}</p>}
       {loading ? (
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
@@ -85,12 +83,12 @@ export default function IncomePage() {
         </div>
       )}
 
-      {editing && <IncomeForm uid={user.uid} {...editing} onClose={() => setEditing(null)} />}
+      {editing && <IncomeForm {...editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function IncomeForm({ uid, id, form: initial, onClose }: { uid: string; id: string | null; form: typeof EMPTY; onClose: () => void }) {
+function IncomeForm({ id, form: initial, onClose }: { id: string | null; form: typeof EMPTY; onClose: () => void }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof EMPTY, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -101,8 +99,8 @@ function IncomeForm({ uid, id, form: initial, onClose }: { uid: string; id: stri
     if (amount == null) return setError("Enter an amount.");
     const data = { date: form.date, source: form.source.trim(), type: form.type, amount, taxPaid: parseAmount(form.taxPaid), notes: form.notes.trim() };
     try {
-      if (id) await updateDoc(doc(db, "users", uid, "income", id), data);
-      else await addDoc(collection(db, "users", uid, "income"), { ...data, createdAt: serverTimestamp() });
+      if (id) await patch("income", id, data);
+      else await put("income", { ...data, id: newId(), createdAt: Date.now() });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -153,7 +151,7 @@ function IncomeForm({ uid, id, form: initial, onClose }: { uid: string; id: stri
               className="btn danger"
               onClick={async () => {
                 if (confirm("Delete this entry?")) {
-                  await deleteDoc(doc(db, "users", uid, "income", id));
+                  await remove("income", id);
                   onClose();
                 }
               }}
