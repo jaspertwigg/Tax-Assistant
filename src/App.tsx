@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
-import { recentTaxYears } from "./lib/countries";
+import { countryOf, recentTaxYears } from "./lib/countries";
 import { AppContext, currentTaxYear, TaxYear, useSettings } from "./lib/data";
 import ChatPage from "./pages/Chat";
 import Dashboard from "./pages/Dashboard";
@@ -15,7 +15,7 @@ const NAV = [
   { to: "/receipts", label: "Receipts", icon: "🧾" },
   { to: "/chat", label: "Ask Claude", icon: "💬" },
   { to: "/income", label: "Income", icon: "💰" },
-  { to: "/mileage", label: "Mileage", icon: "🚗" },
+  { to: "/mileage", label: "Mileage", auLabel: "Car trips", icon: "🚗" },
   { to: "/deadlines", label: "Deadlines", icon: "📅" },
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];
@@ -31,7 +31,7 @@ export default function App() {
 
   const yearPicker = (
     <label className="year-picker">
-      <span>Tax year</span>
+      <span>{countryOf(profile.country).yearTerm === "Financial year" ? "FY" : "Tax year"}</span>
       <select value={taxYear.start} onChange={(e) => setTaxYear(years.find((y) => y.start === e.target.value) ?? null)}>
         {years.map((y) => (
           <option key={y.start} value={y.start}>
@@ -57,7 +57,7 @@ export default function App() {
                 <span className="nav-icon" aria-hidden>
                   {n.icon}
                 </span>
-                <span className="nav-label">{n.label}</span>
+                <span className="nav-label">{profile.country === "AU" && "auLabel" in n ? n.auLabel : n.label}</span>
               </NavLink>
             ))}
           </nav>

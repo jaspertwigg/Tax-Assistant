@@ -1,14 +1,14 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { COUNTRIES, taxYearBounds } from "./countries";
-import { get, getAll, getSetting, RecordStore, subscribe } from "./db";
+import { countryOf, CountryProfile, taxYearBounds } from "./countries";
+import { get, getAll, getSetting, RecordStore, setSetting, subscribe } from "./db";
 import type { Profile, StoredFile } from "./types";
 
 export const DEFAULT_PROFILE: Profile = {
-  country: "UK",
-  currency: "GBP",
+  country: "AU",
+  currency: "AUD",
   situation: "",
-  mileageRate: 0.45,
-  distanceUnit: "miles",
+  mileageRate: 0.88,
+  distanceUnit: "km",
 };
 
 export interface TaxYear {
@@ -33,7 +33,25 @@ export function useApp(): AppState {
 }
 
 export function currentTaxYear(profile: Profile): TaxYear {
-  return taxYearBounds(profile.country in COUNTRIES ? profile.country : "UK");
+  return taxYearBounds(profile.country);
+}
+
+/** Terminology, categories and rates for the user's country. */
+export function useCountry(): CountryProfile {
+  return countryOf(useApp().profile.country);
+}
+
+/**
+ * Early versions defaulted to the UK. Move a saved UK/GBP profile to Australia once,
+ * keeping anything the user wrote about their situation.
+ */
+export async function migrateToAustralia(): Promise<void> {
+  if (await getSetting("auMigrated")) return;
+  const saved = await getSetting<Partial<Profile>>("profile");
+  if (saved && saved.country === "UK" && saved.currency === "GBP") {
+    await setSetting("profile", { ...saved, country: "AU", currency: "AUD", mileageRate: 0.88, distanceUnit: "km" });
+  }
+  await setSetting("auMigrated", true);
 }
 
 export async function loadProfile(): Promise<Profile> {

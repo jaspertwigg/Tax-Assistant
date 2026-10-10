@@ -2,7 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import App from "./App";
+import { migrateToAustralia } from "./lib/data";
 import "./styles.css";
+
+migrateToAustralia().catch(() => undefined);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

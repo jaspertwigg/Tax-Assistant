@@ -1,7 +1,6 @@
 import { DragEvent, useMemo, useRef, useState } from "react";
 import ReceiptEditor from "../components/ReceiptEditor";
-import { CATEGORIES } from "../lib/countries";
-import { byDateDesc, useApp, useFileUrl, useRecords } from "../lib/data";
+import { byDateDesc, useApp, useCountry, useFileUrl, useRecords } from "../lib/data";
 import { formatDate, formatMoney } from "../lib/format";
 import type { Receipt } from "../lib/types";
 import { addReceipt } from "../lib/upload";
@@ -14,6 +13,7 @@ export function needsReview(r: Receipt): boolean {
 
 export default function Receipts() {
   const { profile, apiKey, taxYear } = useApp();
+  const country = useCountry();
   const { items, loading } = useRecords<Receipt>("receipts", byDateDesc);
   const [scope, setScope] = useState<Scope>("year");
   const [search, setSearch] = useState("");
@@ -81,7 +81,7 @@ export default function Receipts() {
         <div>
           <h1>Receipts</h1>
           <p className="muted">
-            Snap or upload a receipt{apiKey ? " and Claude reads the merchant, date, total, tax and category for you" : ""}. Photos stay on this phone.
+            Snap or upload a receipt{apiKey ? ` and Claude reads the merchant, date, total, ${country.salesTaxName} and category for you` : ""}. Photos stay on this phone.
           </p>
         </div>
         <div className="actions">
@@ -145,7 +145,7 @@ export default function Receipts() {
         <input type="search" placeholder="Search merchant, notes, labels…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
-          {CATEGORIES.map((c) => (
+          {country.categories.map((c) => (
             <option key={c}>{c}</option>
           ))}
         </select>

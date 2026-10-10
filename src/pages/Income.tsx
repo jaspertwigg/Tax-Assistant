@@ -1,14 +1,16 @@
 import { FormEvent, useState } from "react";
 import Modal from "../components/Modal";
-import { useApp, useYearRecords } from "../lib/data";
+import { useApp, useCountry, useYearRecords } from "../lib/data";
 import { newId, patch, put, remove } from "../lib/db";
 import { formatDate, formatMoney, parseAmount, todayIso } from "../lib/format";
-import { INCOME_TYPES, type Income } from "../lib/types";
+import type { CountryProfile } from "../lib/countries";
+import type { Income } from "../lib/types";
 
-const EMPTY = { date: todayIso(), source: "", type: INCOME_TYPES[0], amount: "", taxPaid: "", notes: "" };
+const EMPTY = { date: todayIso(), source: "", type: "", amount: "", taxPaid: "", notes: "" };
 
 export default function IncomePage() {
   const { profile } = useApp();
+  const country = useCountry();
   const { items, loading } = useYearRecords<Income>("income");
   const [editing, setEditing] = useState<{ id: string | null; form: typeof EMPTY } | null>(null);
   const total = items.reduce((s, i) => s + (i.amount ?? 0), 0);
@@ -23,14 +25,14 @@ export default function IncomePage() {
           <h1>Income</h1>
           <p className="muted">Log what you earn so you and Claude can see the whole picture.</p>
         </div>
-        <button className="btn primary" onClick={() => setEditing({ id: null, form: { ...EMPTY, date: todayIso() } })}>
+        <button className="btn primary" onClick={() => setEditing({ id: null, form: { ...EMPTY, date: todayIso(), type: country.incomeTypes[0] } })}>
           + Add income
         </button>
       </header>
 
       <section className="stats">
         <div className="stat">
-          <span className="stat-label">Total this tax year</span>
+          <span className="stat-label">Total this {country.yearTerm.toLowerCase()}</span>
           <span className="stat-value">{formatMoney(total, profile.currency)}</span>
         </div>
         {[...byType.entries()].map(([t, v]) => (
@@ -45,7 +47,7 @@ export default function IncomePage() {
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
         <div className="empty">
-          <p>No income recorded for this tax year.</p>
+          <p>No income recorded for this {country.yearTerm.toLowerCase()}.</p>
         </div>
       ) : (
         <div className="table-wrap">
@@ -56,7 +58,7 @@ export default function IncomePage() {
                 <th>Source</th>
                 <th>Type</th>
                 <th className="num">Amount</th>
-                <th className="num">Tax deducted</th>
+                <th className="num">{country.taxWithheldName}</th>
               </tr>
             </thead>
             <tbody>
@@ -83,12 +85,12 @@ export default function IncomePage() {
         </div>
       )}
 
-      {editing && <IncomeForm {...editing} onClose={() => setEditing(null)} />}
+      {editing && <IncomeForm country={country} {...editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function IncomeForm({ id, form: initial, onClose }: { id: string | null; form: typeof EMPTY; onClose: () => void }) {
+function IncomeForm({ country, id, form: initial, onClose }: { country: CountryProfile; id: string | null; form: typeof EMPTY; onClose: () => void }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof EMPTY, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -118,7 +120,7 @@ function IncomeForm({ id, form: initial, onClose }: { id: string | null; form: t
           <label>
             Type
             <select value={form.type} onChange={(e) => set("type", e.target.value)}>
-              {INCOME_TYPES.map((t) => (
+              {(country.incomeTypes.includes(form.type) ? country.incomeTypes : [...country.incomeTypes, form.type]).map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
@@ -126,7 +128,7 @@ function IncomeForm({ id, form: initial, onClose }: { id: string | null; form: t
         </div>
         <label>
           Source
-          <input required placeholder="e.g. client name, employer, tenant" value={form.source} onChange={(e) => set("source", e.target.value)} />
+          <input required placeholder={country.currency === "AUD" ? "e.g. employer, ABN client, tenant" : "e.g. client name, employer, tenant"} value={form.source} onChange={(e) => set("source", e.target.value)} />
         </label>
         <div className="grid2">
           <label>
@@ -134,7 +136,7 @@ function IncomeForm({ id, form: initial, onClose }: { id: string | null; form: t
             <input inputMode="decimal" required value={form.amount} onChange={(e) => set("amount", e.target.value)} />
           </label>
           <label>
-            Tax already deducted
+            {country.taxWithheldName}
             <input inputMode="decimal" placeholder="optional" value={form.taxPaid} onChange={(e) => set("taxPaid", e.target.value)} />
           </label>
         </div>

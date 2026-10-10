@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { CATEGORIES, COUNTRIES, taxYearBounds } from "./countries";
+import { countryOf, PERSONAL_CATEGORY, taxYearBounds } from "./countries";
 import { get, getAll, newId, patch, put } from "./db";
 import { loadProfile } from "./data";
 import type { ChatMessage, Income, Profile, Receipt, Trip } from "./types";
@@ -50,6 +50,8 @@ const clean = (s: unknown, max = 120) => String(s ?? "").replace(/\s+/g, " ").sl
 /** A compact plain-text snapshot of the current tax year's records for Claude to read. */
 export async function recordsSnapshot(profile: Profile): Promise<string> {
   const { start, end, label } = taxYearBounds(profile.country);
+  const country = countryOf(profile.country);
+  const year = country.yearTerm.toLowerCase();
   const [allReceipts, allIncome, allTrips] = await Promise.all([getAll("receipts"), getAll("income"), getAll("mileage")]);
   const inYear = <T extends { date: string }>(xs: T[]) =>
     xs.filter((x) => x.date >= start && x.date <= end).sort((a, b) => b.date.localeCompare(a.date));
@@ -73,18 +75,18 @@ export async function recordsSnapshot(profile: Profile): Promise<string> {
   let incomeTotal = 0;
   const incomeLines = income.map((r) => {
     incomeTotal += r.amount ?? 0;
-    return `- ${r.date} | ${clean(r.source, 60)} | ${money(r.amount)} | ${clean(r.type, 30)}${r.taxPaid ? ` | tax already deducted ${money(r.taxPaid)}` : ""}`;
+    return `- ${r.date} | ${clean(r.source, 60)} | ${money(r.amount)} | ${clean(r.type, 30)}${r.taxPaid ? ` | ${country.taxWithheldName.toLowerCase()} ${money(r.taxPaid)}` : ""}`;
   });
   const distance = trips.reduce((s, t) => s + (t.distance ?? 0), 0);
   const cats = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => `  ${c}: ${v.toFixed(2)}`);
   const undated = allReceipts.filter((r) => !r.date).length;
 
   return [
-    `Tax year ${label} (${start} to ${end}). Home currency ${profile.currency || COUNTRIES[profile.country].currency}.`,
-    `Receipts stored overall: ${allReceipts.length}${undated ? ` (${undated} with no date yet)` : ""}. In this tax year: ${receipts.length}, total ${expenseTotal.toFixed(2)}.`,
-    cats.length ? `Expenses by category:\n${cats.join("\n")}` : "No expenses recorded this tax year.",
-    `Income this tax year: ${income.length} entries, total ${incomeTotal.toFixed(2)}.`,
-    `Business mileage this tax year: ${distance.toFixed(1)} ${profile.distanceUnit} across ${trips.length} trips (rate set: ${profile.mileageRate}).`,
+    `${country.yearTerm} ${label} (${start} to ${end}). Home currency ${profile.currency || country.currency}.`,
+    `Receipts stored overall: ${allReceipts.length}${undated ? ` (${undated} with no date yet)` : ""}. In this ${year}: ${receipts.length}, total ${expenseTotal.toFixed(2)}.`,
+    cats.length ? `Expenses by category:\n${cats.join("\n")}` : `No expenses recorded this ${year}.`,
+    `Income this ${year}: ${income.length} entries, total ${incomeTotal.toFixed(2)}.`,
+    `Work car travel this ${year}: ${distance.toFixed(1)} ${profile.distanceUnit} across ${trips.length} trips (rate set: ${profile.mileageRate} per ${profile.distanceUnit === "km" ? "km" : "mile"}).`,
     receiptLines.length ? `Receipts (newest first${receipts.length > MAX_RECORDS ? `, first ${MAX_RECORDS} only` : ""}):\n${receiptLines.join("\n")}` : "",
     incomeLines.length ? `Income entries:\n${incomeLines.join("\n")}` : "",
   ]
@@ -116,7 +118,7 @@ export async function askClaude(apiKey: string, message: string): Promise<void> 
   await put("chat", { id: newId(), role: "user", content: message, createdAt: Date.now() });
 
   try {
-    const country = COUNTRIES[profile.country];
+    const country = countryOf(profile.country);
     const context = [
       `<my_details>Country: ${country.name} (tax authority: ${country.authority}). Today: ${new Date().toISOString().slice(0, 10)}.`,
       profile.situation ? `About me: ${clean(profile.situation, 1000)}` : "",
@@ -179,7 +181,7 @@ export async function askClaude(apiKey: string, message: string): Promise<void> 
   }
 }
 
-const RECEIPT_SCHEMA = {
+const receiptSchema = (categories: readonly string[]) => ({
   type: "object",
   additionalProperties: false,
   required: ["is_receipt", "merchant", "date", "total", "tax_amount", "currency", "category", "labels", "summary", "confidence"],
@@ -189,13 +191,13 @@ const RECEIPT_SCHEMA = {
     date: { type: "string", description: "Transaction date as YYYY-MM-DD. Empty string if not shown." },
     total: { type: "number", description: "Final amount paid including tax. 0 if not shown." },
     tax_amount: { type: "number", description: "VAT/GST/sales tax included in the total. 0 if not shown." },
-    currency: { type: "string", description: "ISO 4217 code, e.g. GBP, AUD, USD." },
-    category: { type: "string", enum: [...CATEGORIES] },
+    currency: { type: "string", description: "ISO 4217 code, e.g. AUD, NZD, USD." },
+    category: { type: "string", enum: [...categories] },
     labels: { type: "array", items: { type: "string" }, description: "1-4 short lowercase tags, e.g. 'fuel', 'client lunch'." },
-    summary: { type: "string", description: "One line describing what was bought." },
+    summary: { type: "string", description: "One line describing what was bought. Include the supplier's ABN/tax number if printed." },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
   },
-};
+});
 
 interface ExtractedReceipt {
   is_receipt: boolean;
@@ -238,7 +240,7 @@ export async function scanReceipt(apiKey: string, receiptId: string): Promise<vo
   try {
     const anthropic = client(apiKey);
     const profile = await loadProfile();
-    const country = COUNTRIES[profile.country];
+    const country = countryOf(profile.country);
     const data = await toBase64(file.blob);
     const fileBlock: Anthropic.Beta.BetaContentBlockParam = isPdf
       ? { type: "document", source: { type: "base64", media_type: "application/pdf", data } }
@@ -249,7 +251,7 @@ export async function scanReceipt(apiKey: string, receiptId: string): Promise<vo
       max_tokens: 4000,
       betas: [FALLBACK_BETA],
       fallbacks: "default",
-      output_config: { effort: "low", format: { type: "json_schema", schema: RECEIPT_SCHEMA } },
+      output_config: { effort: "low", format: { type: "json_schema", schema: receiptSchema(country.categories) } },
       messages: [
         {
           role: "user",
@@ -259,7 +261,9 @@ export async function scanReceipt(apiKey: string, receiptId: string): Promise<vo
               type: "text",
               text: `Extract the details from this receipt for a tax-records app. The user is in ${country.name}; their default currency is ${
                 profile.currency || country.currency
-              } and sales tax there is called ${country.salesTaxName}. Pick the closest category; use "Personal (not deductible)" only for obviously personal purchases.`,
+              } and sales tax there is called ${country.salesTaxName}. Pick the closest category; use "${PERSONAL_CATEGORY}" only for obviously personal purchases.${
+                profile.country === "AU" ? " Categories ending in (D1)–(D10) are the deduction labels on the Australian individual tax return; use \"Business expenses (ABN)\" for sole-trader business costs." : ""
+              }`,
             },
           ],
         },
@@ -288,7 +292,7 @@ export async function scanReceipt(apiKey: string, receiptId: string): Promise<vo
     if (!current.category && x.category) updates.category = x.category;
     if (!current.labels?.length && x.labels.length) updates.labels = x.labels.slice(0, 6).map((l) => l.toLowerCase().trim().slice(0, 30));
     if (!current.notes && x.summary) updates.notes = x.summary.slice(0, 500);
-    if (current.deductible == null) updates.deductible = x.category !== "Personal (not deductible)";
+    if (current.deductible == null) updates.deductible = x.category !== PERSONAL_CATEGORY;
     await patch("receipts", receiptId, updates);
   } catch (err) {
     const e = friendlyError(err);

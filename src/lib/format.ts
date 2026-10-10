@@ -1,7 +1,7 @@
 export function formatMoney(value: number | null | undefined, currency: string): string {
   if (value == null || !Number.isFinite(value)) return "—";
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "GBP" }).format(value);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency || "AUD" }).format(value);
   } catch {
     return `${value.toFixed(2)} ${currency}`;
   }

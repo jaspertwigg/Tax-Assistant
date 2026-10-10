@@ -2,13 +2,14 @@ import { Link } from "react-router-dom";
 import { saveFile } from "../lib/backup";
 import { toCsv } from "../lib/csv";
 import { upcomingDeadlines } from "../lib/deadlines";
-import { useApp, useYearRecords } from "../lib/data";
+import { useApp, useCountry, useYearRecords } from "../lib/data";
 import { daysUntil, formatDate, formatMoney } from "../lib/format";
 import type { Income, Receipt, Trip } from "../lib/types";
 import { needsReview } from "./Receipts";
 
 export default function Dashboard() {
   const { profile, apiKey, taxYear } = useApp();
+  const country = useCountry();
   const receipts = useYearRecords<Receipt>("receipts");
   const income = useYearRecords<Income>("income");
   const trips = useYearRecords<Trip>("mileage");
@@ -21,7 +22,8 @@ export default function Dashboard() {
   const incomeTotal = income.items.reduce((s, r) => s + (r.amount ?? 0), 0);
   const taxDeducted = income.items.reduce((s, r) => s + (r.taxPaid ?? 0), 0);
   const distance = trips.items.reduce((s, t) => s + (t.distance ?? 0), 0);
-  const mileageClaim = distance * (profile.mileageRate || 0);
+  const claimableDistance = country.mileage.cap ? Math.min(distance, country.mileage.cap) : distance;
+  const mileageClaim = claimableDistance * (profile.mileageRate || 0);
   const review = receipts.items.filter(needsReview).length;
 
   const byCategory = new Map<string, number>();
@@ -39,7 +41,7 @@ export default function Dashboard() {
         [
           ...receipts.items.map((r) => ["Expense", r.date, r.merchant, r.category, r.amount, r.taxAmount, r.currency || cur, r.deductible === false ? "No" : "Yes", r.labels, r.notes]),
           ...income.items.map((i) => ["Income", i.date, i.source, i.type, i.amount, i.taxPaid, cur, "", "", i.notes]),
-          ...trips.items.map((t) => ["Mileage", t.date, [t.from, t.to].filter(Boolean).join(" to "), t.purpose, t.distance, "", profile.distanceUnit, "", "", ""]),
+          ...trips.items.map((t) => ["Car trip", t.date, [t.from, t.to].filter(Boolean).join(" to "), t.purpose, t.distance, "", profile.distanceUnit, "", "", ""]),
         ],
       ),
       `tax-year-${slug}.csv`,
@@ -50,7 +52,9 @@ export default function Dashboard() {
     <div className="page">
       <header className="page-header">
         <div>
-          <h1>Tax year {taxYear.label}</h1>
+          <h1>
+            {country.yearTerm} {taxYear.label}
+          </h1>
           <p className="muted">
             {formatDate(taxYear.start)} – {formatDate(taxYear.end)}
           </p>
@@ -78,13 +82,13 @@ export default function Dashboard() {
 
       <section className="stats">
         <Stat label="Claimable expenses" value={formatMoney(expenses, cur)} sub={plural(claimable.length, "receipt")} />
-        <Stat label="Income recorded" value={formatMoney(incomeTotal, cur)} sub={taxDeducted ? `${formatMoney(taxDeducted, cur)} tax already deducted` : plural(income.items.length, "entry", "entries")} />
+        <Stat label="Income recorded" value={formatMoney(incomeTotal, cur)} sub={taxDeducted ? `${formatMoney(taxDeducted, cur)} ${country.taxWithheldName.toLowerCase()}` : plural(income.items.length, "entry", "entries")} />
         <Stat
-          label="Mileage"
+          label={country.currency === "AUD" ? "Work car trips" : "Mileage"}
           value={`${distance.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${profile.distanceUnit}`}
-          sub={mileageClaim ? `≈ ${formatMoney(mileageClaim, cur)} at your rate` : plural(trips.items.length, "trip")}
+          sub={mileageClaim ? `≈ ${formatMoney(mileageClaim, cur)} at your rate${claimableDistance < distance ? ` (capped at ${country.mileage.cap?.toLocaleString()} ${profile.distanceUnit})` : ""}` : plural(trips.items.length, "trip")}
         />
-        <Stat label="Sales tax on expenses" value={formatMoney(salesTax, cur)} sub="Shown on receipts" />
+        <Stat label={`${country.salesTaxName} on expenses`} value={formatMoney(salesTax, cur)} sub="Shown on receipts" />
         <Stat
           label="Income less costs"
           value={formatMoney(incomeTotal - expenses - mileageClaim, cur)}
@@ -97,7 +101,7 @@ export default function Dashboard() {
         <section className="card">
           <h2>Expenses by category</h2>
           {cats.length === 0 ? (
-            <p className="muted">No claimable receipts in this tax year yet.</p>
+            <p className="muted">No claimable receipts in this {country.yearTerm.toLowerCase()} yet.</p>
           ) : (
             <ul className="bars">
               {cats.map(([c, v]) => (

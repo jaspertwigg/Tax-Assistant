@@ -71,15 +71,3 @@ export interface ChatMessage {
   sources?: { url: string; title: string }[];
   createdAt: number;
 }
-
-export const INCOME_TYPES = [
-  "Self-employment / sales",
-  "Employment (salary)",
-  "Rental income",
-  "Dividends",
-  "Interest",
-  "Capital gains",
-  "Pension",
-  "Benefits",
-  "Other",
-];

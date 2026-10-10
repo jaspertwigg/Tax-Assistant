@@ -1,19 +1,11 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { createBackup, restoreBackup, saveFile } from "../lib/backup";
 import { testApiKey } from "../lib/claude";
-import { COUNTRIES, CountryCode } from "../lib/countries";
+import { COUNTRIES, CountryCode, countryOf } from "../lib/countries";
 import { useApp } from "../lib/data";
 import { clearAll, setSetting } from "../lib/db";
 import { todayIso } from "../lib/format";
 
-const MILEAGE_DEFAULTS: Partial<Record<CountryCode, { rate: number; unit: "miles" | "km" }>> = {
-  UK: { rate: 0.45, unit: "miles" },
-  US: { rate: 0.7, unit: "miles" },
-  AU: { rate: 0.88, unit: "km" },
-  IE: { rate: 0.4, unit: "km" },
-  NZ: { rate: 1.04, unit: "km" },
-  CA: { rate: 0.72, unit: "km" },
-};
 
 export default function SettingsPage() {
   return (
@@ -93,20 +85,15 @@ function ProfileSection() {
   const [status, setStatus] = useState<string | null>(null);
 
   function changeCountry(country: CountryCode) {
-    const m = MILEAGE_DEFAULTS[country];
-    setForm((f) => ({
-      ...f,
-      country,
-      currency: COUNTRIES[country].currency,
-      ...(m ? { mileageRate: String(m.rate), distanceUnit: m.unit } : {}),
-    }));
+    const c = countryOf(country);
+    setForm((f) => ({ ...f, country, currency: c.currency, mileageRate: String(c.mileage.rate), distanceUnit: c.mileage.unit }));
   }
 
   async function save(e: FormEvent) {
     e.preventDefault();
     await setSetting("profile", {
       country: form.country,
-      currency: form.currency.trim().toUpperCase().slice(0, 3) || "GBP",
+      currency: form.currency.trim().toUpperCase().slice(0, 3) || "AUD",
       situation: form.situation.trim().slice(0, 2000),
       mileageRate: Number(form.mileageRate) || 0,
       distanceUnit: form.distanceUnit,
@@ -119,7 +106,7 @@ function ProfileSection() {
       <h2>About you</h2>
       <div className="grid2">
         <label>
-          Country (sets tax year & deadlines)
+          Country (sets the tax year, deadlines & categories)
           <select value={form.country} onChange={(e) => changeCountry(e.target.value as CountryCode)}>
             {(Object.keys(COUNTRIES) as CountryCode[]).map((c) => (
               <option key={c} value={c}>
@@ -137,14 +124,18 @@ function ProfileSection() {
         Your tax situation (shared with Claude when you chat)
         <textarea
           rows={4}
-          placeholder="e.g. Self-employed electrician, sole trader since 2022, not VAT registered. Also rent out a flat. Work from home two days a week."
+          placeholder={
+            form.country === "AU"
+              ? "e.g. Full-time nurse (PAYG) with an ABN side business in photography, not registered for GST. Own an investment property. Work from home 2 days a week. Use a tax agent."
+              : "e.g. Self-employed electrician, sole trader since 2022, not VAT registered. Also rent out a flat. Work from home two days a week."
+          }
           value={form.situation}
           onChange={(e) => setForm({ ...form, situation: e.target.value })}
         />
       </label>
       <div className="grid2">
         <label>
-          Mileage rate per {form.distanceUnit === "miles" ? "mile" : "km"}
+          Car rate per {form.distanceUnit === "miles" ? "mile" : "km"}
           <input inputMode="decimal" value={form.mileageRate} onChange={(e) => setForm({ ...form, mileageRate: e.target.value })} />
         </label>
         <label>
@@ -155,7 +146,7 @@ function ProfileSection() {
           </select>
         </label>
       </div>
-      <p className="muted small">Mileage defaults are recent standard rates and change over time — ask Claude for the current one.</p>
+      <p className="muted small">{countryOf(form.country).mileage.note}</p>
       <div className="actions">
         <button className="btn primary">Save</button>
         {status && <span className="muted">{status}</span>}

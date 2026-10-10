@@ -11,7 +11,7 @@ A personal, phone-only app for keeping your tax affairs in order. Your receipts 
 - **Deadlines and reminders.** Shows the usual key dates for your country plus your own reminders.
 - **CSV export.** One file for the tax year, ready to send to an accountant.
 - **Backup and restore.** Saves everything, photos included, to a single file you can keep in iCloud Drive or Google Drive.
-- **Multi-country.** Supports the UK, Australia, the US, Ireland, New Zealand and Canada.
+- **Set up for Australia.** Uses the 1 July – 30 June financial year, AUD, GST and PAYG tax withheld. It shows ATO key dates: BAS quarters, 14 July income statements, 31 October self-lodgment and 15 May for tax-agent clients. Deduction categories follow the tax return labels (D1 car, D2 travel, D3 clothing, D4 self-education, D5 other work expenses, D9 donations, D10 managing tax affairs). Work car trips use the cents-per-km method, capped at 5,000 km. Other countries (UK, US, Ireland, New Zealand, Canada) can be chosen in Settings.
 
 > The app gives general information, not regulated tax advice. Check anything important with your tax authority or an accountant.
 

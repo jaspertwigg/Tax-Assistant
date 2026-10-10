@@ -20,13 +20,19 @@ function forTaxYear(country: CountryCode, y: number): Deadline[] {
         { date: iso(y + 2, 1, 31), title: "Online return & tax bill due", detail: `File your ${label(y)} online return and pay the balance plus your first payment on account.` },
         { date: iso(y + 2, 7, 31), title: "Second payment on account", detail: `Second payment on account towards ${label(y + 1)}.` },
       ];
-    case "AU":
+    case "AU": {
+      const fy = `${y}–${String(y + 1).slice(2)}`;
       return [
-        { date: iso(y + 1, 6, 30), title: `Financial year ${label(y)} ends`, detail: "Last day for deductible purchases and super contributions to count this year." },
-        { date: iso(y + 1, 7, 28), title: "Q4 BAS due", detail: "April–June quarter BAS (if registered for GST)." },
-        { date: iso(y + 1, 10, 28), title: "Q1 BAS due", detail: "July–September quarter BAS (if registered for GST)." },
-        { date: iso(y + 1, 10, 31), title: "Tax return due (self-lodging)", detail: `Lodge your ${label(y)} return. Later dates apply if you use a registered tax agent.` },
+        { date: iso(y, 10, 28), title: "BAS due: Jul–Sep quarter", detail: "Quarterly BAS and PAYG instalment (if you're registered for GST or pay instalments)." },
+        { date: iso(y + 1, 2, 28), title: "BAS due: Oct–Dec quarter", detail: "Quarterly BAS and PAYG instalment (if applicable)." },
+        { date: iso(y + 1, 4, 28), title: "BAS due: Jan–Mar quarter", detail: "Quarterly BAS and PAYG instalment (if applicable)." },
+        { date: iso(y + 1, 6, 30), title: `${fy} financial year ends`, detail: "Last day for deductible purchases, donations and personal super contributions to count this year." },
+        { date: iso(y + 1, 7, 14), title: "Income statements tax-ready", detail: "Employers should have finalised your income statement in myGov by now." },
+        { date: iso(y + 1, 7, 28), title: "BAS due: Apr–Jun quarter", detail: "Quarterly BAS and PAYG instalment (if applicable)." },
+        { date: iso(y + 1, 10, 31), title: `${fy} tax return due (lodging yourself)`, detail: "Lodge via myTax, or register with a tax agent before today to get a later date." },
+        { date: iso(y + 2, 5, 15), title: `${fy} return due (via tax agent)`, detail: "Usual date for tax-agent clients who registered with an agent by 31 October. Check with your agent." },
       ];
+    }
     case "US":
       return [
         { date: iso(y, 4, 15), title: "Q1 estimated tax payment", detail: `Estimated tax for ${y} (Form 1040-ES).` },

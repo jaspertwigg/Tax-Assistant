@@ -1,11 +1,13 @@
 import { FormEvent, useState } from "react";
-import { useApp, useYearRecords } from "../lib/data";
+import { useApp, useCountry, useYearRecords } from "../lib/data";
 import { newId, put, remove } from "../lib/db";
 import { formatDate, formatMoney, todayIso } from "../lib/format";
 import type { Trip } from "../lib/types";
 
 export default function MileagePage() {
   const { profile } = useApp();
+  const country = useCountry();
+  const isAU = profile.country === "AU";
   const { items, loading } = useYearRecords<Trip>("mileage");
   const [form, setForm] = useState({ date: todayIso(), from: "", to: "", purpose: "", distance: "", returnTrip: false });
   const [saving, setSaving] = useState(false);
@@ -37,11 +39,13 @@ export default function MileagePage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <h1>Mileage log</h1>
+          <h1>{isAU ? "Work car trips" : "Mileage log"}</h1>
           <p className="muted">
-            Record business journeys. Total this tax year: <strong>{total.toLocaleString(undefined, { maximumFractionDigits: 1 })} {unit}</strong>
+            {isAU ? "Record work-related car trips (not your normal commute)." : "Record business journeys."} Total this{" "}
+            {country.yearTerm.toLowerCase()}: <strong>{total.toLocaleString(undefined, { maximumFractionDigits: 1 })} {unit}</strong>
             {profile.mileageRate > 0 && <> ≈ {formatMoney(total * profile.mileageRate, profile.currency)} at {profile.mileageRate}/{unit === "miles" ? "mile" : "km"} (set in Settings)</>}
           </p>
+          <p className="muted small">{country.mileage.note}</p>
         </div>
       </header>
 
@@ -64,7 +68,7 @@ export default function MileagePage() {
         <p className="muted">Loading…</p>
       ) : items.length === 0 ? (
         <div className="empty">
-          <p>No trips logged for this tax year.</p>
+          <p>No trips logged for this {country.yearTerm.toLowerCase()}.</p>
         </div>
       ) : (
         <div className="table-wrap">

@@ -3,19 +3,29 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 import { askClaude } from "../lib/claude";
-import { COUNTRIES } from "../lib/countries";
+import { countryOf } from "../lib/countries";
 import { useApp, useRecords } from "../lib/data";
 import { clearAll } from "../lib/db";
 import type { ChatMessage } from "../lib/types";
 
-const SUGGESTIONS = [
-  "Summarise my expenses for this tax year",
-  "Which of my receipts might not be claimable?",
-  "What are my next tax deadlines?",
-  "Can I claim for working from home?",
-  "What records should I keep and for how long?",
-  "Draft a note for my accountant summarising my year",
-];
+const SUGGESTIONS: Record<string, string[]> = {
+  AU: [
+    "Summarise my deductions for this financial year",
+    "Which of my receipts might not be claimable?",
+    "How does the working-from-home fixed rate method work?",
+    "When is my tax return due, and what's coming up?",
+    "Roughly what refund or bill should I expect?",
+    "Draft a note for my tax agent summarising my year",
+  ],
+  default: [
+    "Summarise my expenses for this tax year",
+    "Which of my receipts might not be claimable?",
+    "What are my next tax deadlines?",
+    "Can I claim for working from home?",
+    "What records should I keep and for how long?",
+    "Draft a note for my accountant summarising my year",
+  ],
+};
 
 export default function ChatPage() {
   const { profile, apiKey } = useApp();
@@ -68,7 +78,7 @@ export default function ChatPage() {
         <div>
           <h1>Ask Claude</h1>
           <p className="muted">
-            Claude can see your receipts, income and mileage for the current tax year and checks current {COUNTRIES[profile.country].authority}{" "}
+            Claude can see your receipts, income and mileage for the current {countryOf(profile.country).yearTerm.toLowerCase()} and checks current {countryOf(profile.country).authority}{" "}
             guidance online. General information, not formal tax advice.
           </p>
         </div>
@@ -91,7 +101,7 @@ export default function ChatPage() {
           <div className="chat-empty">
             <p>Try asking:</p>
             <div className="suggestions-grid">
-              {SUGGESTIONS.map((s) => (
+              {(SUGGESTIONS[profile.country] ?? SUGGESTIONS.default).map((s) => (
                 <button key={s} className="suggestion" disabled={!apiKey} onClick={() => send(s)}>
                   {s}
                 </button>

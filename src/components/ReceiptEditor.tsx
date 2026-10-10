@@ -1,7 +1,6 @@
 import { FormEvent, useState } from "react";
 import { scanReceipt } from "../lib/claude";
-import { CATEGORIES } from "../lib/countries";
-import { useApp, useFileUrl } from "../lib/data";
+import { useApp, useCountry, useFileUrl } from "../lib/data";
 import { patch, remove } from "../lib/db";
 import { parseAmount } from "../lib/format";
 import type { Receipt } from "../lib/types";
@@ -10,6 +9,9 @@ import Modal from "./Modal";
 
 export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt: Receipt; allLabels: string[]; onClose: () => void }) {
   const { profile, apiKey } = useApp();
+  const country = useCountry();
+  // Keep a category from older data selectable even if it's no longer in the list.
+  const categories = receipt.category && !country.categories.includes(receipt.category) ? [...country.categories, receipt.category] : country.categories;
   const fileUrl = useFileUrl(receipt.id, "full");
   const [form, setForm] = useState({
     merchant: receipt.merchant,
@@ -97,7 +99,7 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
               Category
               <select value={form.category} onChange={(e) => set("category", e.target.value)}>
                 <option value="">Choose…</option>
-                {CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <option key={c}>{c}</option>
                 ))}
               </select>
@@ -109,7 +111,7 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
               <input inputMode="decimal" value={form.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0.00" />
             </label>
             <label>
-              Tax incl.
+              {country.salesTaxName} incl.
               <input inputMode="decimal" value={form.taxAmount} onChange={(e) => set("taxAmount", e.target.value)} placeholder="0.00" />
             </label>
             <label>
