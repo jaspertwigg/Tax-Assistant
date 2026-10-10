@@ -1,5 +1,5 @@
 import { DBSchema, IDBPDatabase, openDB } from "idb";
-import type { ChatMessage, Income, Receipt, Reminder, StoredFile, Trip } from "./types";
+import type { Income, Receipt, Reminder, StoredFile, Trip } from "./types";
 
 /** Everything the app knows lives in this on-device database. Nothing is sent anywhere except to Claude when asked. */
 interface TaxDB extends DBSchema {
@@ -8,19 +8,20 @@ interface TaxDB extends DBSchema {
   income: { key: string; value: Income };
   mileage: { key: string; value: Trip };
   reminders: { key: string; value: Reminder };
-  chat: { key: string; value: ChatMessage };
   settings: { key: string; value: unknown };
 }
 
-export type RecordStore = "receipts" | "income" | "mileage" | "reminders" | "chat";
+export type RecordStore = "receipts" | "income" | "mileage" | "reminders";
 export type StoreName = RecordStore | "files" | "settings";
-export const ALL_STORES: StoreName[] = ["receipts", "files", "income", "mileage", "reminders", "chat", "settings"];
+export const ALL_STORES: StoreName[] = ["receipts", "files", "income", "mileage", "reminders", "settings"];
 
 let dbPromise: Promise<IDBPDatabase<TaxDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<TaxDB>> {
-  dbPromise ??= openDB<TaxDB>("tax-assistant", 1, {
+  dbPromise ??= openDB<TaxDB>("tax-assistant", 2, {
     upgrade(d) {
+      // v2 removed the in-app chat.
+      if ((d.objectStoreNames as DOMStringList).contains("chat")) (d as unknown as IDBPDatabase).deleteObjectStore("chat");
       for (const name of ALL_STORES) {
         if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, name === "settings" ? undefined : { keyPath: "id" });
       }

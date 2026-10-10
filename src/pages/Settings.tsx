@@ -48,9 +48,11 @@ function ApiKeySection() {
 
   return (
     <form className="card stack" onSubmit={save}>
-      <h2>Claude API key</h2>
+      <h2>Read receipts automatically (optional)</h2>
       <p className="muted small">
-        Needed for reading receipts and for chat. Create one at{" "}
+        Leave this blank to keep the app completely free: you type each receipt's details in yourself. If you add a Claude API key,
+        Claude reads the merchant, date, total and GST from the photo for you, at about 1–3 US cents per receipt charged to your own
+        Anthropic account. Create a key at{" "}
         <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
           console.anthropic.com
         </a>{" "}
@@ -121,7 +123,7 @@ function ProfileSection() {
         </label>
       </div>
       <label>
-        Your tax situation (shared with Claude when you chat)
+        Your tax situation (included when you copy your year for Claude)
         <textarea
           rows={4}
           placeholder={
@@ -225,7 +227,7 @@ function DataSection() {
           className="btn danger"
           disabled={!!busy}
           onClick={() =>
-            confirm("Erase ALL receipts, records, chats and settings from this phone? This can't be undone.") &&
+            confirm("Erase ALL receipts, records and settings from this phone? This can't be undone.") &&
             run("erase", async () => {
               await clearAll();
               return "Everything erased.";

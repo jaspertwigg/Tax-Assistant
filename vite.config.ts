@@ -8,7 +8,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: { claude: ["@anthropic-ai/sdk"], markdown: ["react-markdown", "remark-gfm"] },
+        manualChunks: { claude: ["@anthropic-ai/sdk"] },
       },
     },
   },

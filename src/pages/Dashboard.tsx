@@ -1,6 +1,9 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
+import Modal from "../components/Modal";
 import { saveFile } from "../lib/backup";
 import { toCsv } from "../lib/csv";
+import { yearSummary } from "../lib/summary";
 import { upcomingDeadlines } from "../lib/deadlines";
 import { useApp, useCountry, useYearRecords } from "../lib/data";
 import { daysUntil, formatDate, formatMoney } from "../lib/format";
@@ -8,7 +11,9 @@ import type { Income, Receipt, Trip } from "../lib/types";
 import { needsReview } from "./Receipts";
 
 export default function Dashboard() {
-  const { profile, apiKey, taxYear } = useApp();
+  const { profile, taxYear } = useApp();
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [fallbackText, setFallbackText] = useState<string | null>(null);
   const country = useCountry();
   const receipts = useYearRecords<Receipt>("receipts");
   const income = useYearRecords<Income>("income");
@@ -33,6 +38,17 @@ export default function Dashboard() {
 
   const deadlines = upcomingDeadlines(profile.country).filter((d) => daysUntil(d.date) >= 0).slice(0, 3);
   const slug = taxYear.label.replace("/", "-");
+
+  async function copyForClaude() {
+    const text = await yearSummary(profile, taxYear);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus("Copied — paste it into your Claude chat, then ask your question.");
+    } catch {
+      // Some browsers block clipboard access; let the user copy it by hand.
+      setFallbackText(text);
+    }
+  }
 
   async function exportAll() {
     await saveFile(
@@ -69,11 +85,6 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {!apiKey && (
-        <Link to="/settings" className="notice">
-          Add your Claude API key in Settings to have receipts read automatically and to chat with Claude →
-        </Link>
-      )}
       {review > 0 && (
         <Link to="/receipts" className="notice">
           {review} receipt{review === 1 ? "" : "s"} need a quick check (missing date, amount or category). →
@@ -152,11 +163,20 @@ export default function Dashboard() {
             ))}
             {receipts.items.length === 0 && <li className="muted">Nothing yet.</li>}
           </ul>
-          <Link to="/chat" className="btn wide">
-            💬 Ask Claude about your year
-          </Link>
+          <button className="btn wide" onClick={copyForClaude}>
+            📋 Copy my year for Claude
+          </button>
+          <p className="muted small">
+            {copyStatus ?? "Copies a summary of this year's receipts, income and car trips to paste into a Claude chat, so it can answer using your real figures."}
+          </p>
         </section>
       </div>
+      {fallbackText && (
+        <Modal title="Copy your year" onClose={() => setFallbackText(null)}>
+          <p className="muted small">Select all of this text, copy it, and paste it into your Claude chat.</p>
+          <textarea className="summary-text" readOnly rows={14} value={fallbackText} onFocus={(e) => e.currentTarget.select()} />
+        </Modal>
+      )}
     </div>
   );
 }

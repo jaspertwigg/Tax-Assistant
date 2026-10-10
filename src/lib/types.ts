@@ -63,11 +63,3 @@ export interface Reminder {
   done: boolean;
   createdAt: number;
 }
-
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  sources?: { url: string; title: string }[];
-  createdAt: number;
-}

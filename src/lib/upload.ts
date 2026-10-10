@@ -47,7 +47,7 @@ export async function addReceipt(file: File, opts: { apiKey: string; currency: s
     fileName: file.name,
     contentType,
     status: opts.apiKey ? "scanning" : "ready",
-    scanError: opts.apiKey ? null : "Fill in the details, or add your Claude API key in Settings to have receipts read automatically.",
+    scanError: null,
     createdAt: Date.now(),
   });
   if (opts.apiKey) {

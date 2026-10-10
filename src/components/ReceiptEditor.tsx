@@ -136,15 +136,11 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
             <button className="btn primary" disabled={!!busy}>
               {busy === "save" ? "Saving…" : "Save"}
             </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={!!busy || !apiKey}
-              title={apiKey ? undefined : "Add your Claude API key in Settings"}
-              onClick={() => act("scan", () => scanReceipt(apiKey, receipt.id))}
-            >
-              {busy === "scan" ? "Scanning…" : "Re-scan with Claude"}
-            </button>
+            {apiKey && (
+              <button type="button" className="btn" disabled={!!busy} onClick={() => act("scan", () => scanReceipt(apiKey, receipt.id))}>
+                {busy === "scan" ? "Scanning…" : "Re-scan with Claude"}
+              </button>
+            )}
             <button
               type="button"
               className="btn danger"
@@ -160,7 +156,7 @@ export default function ReceiptEditor({ receipt, allLabels, onClose }: { receipt
               Delete
             </button>
           </div>
-          <p className="muted small">Re-scan only fills fields that are empty.</p>
+          {apiKey && <p className="muted small">Re-scan only fills fields that are empty.</p>}
         </form>
       </div>
     </Modal>

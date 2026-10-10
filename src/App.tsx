@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { countryOf, recentTaxYears } from "./lib/countries";
 import { AppContext, currentTaxYear, TaxYear, useSettings } from "./lib/data";
-import ChatPage from "./pages/Chat";
 import Dashboard from "./pages/Dashboard";
 import Deadlines from "./pages/Deadlines";
 import IncomePage from "./pages/Income";
@@ -13,7 +12,6 @@ import SettingsPage from "./pages/Settings";
 const NAV = [
   { to: "/", label: "Overview", icon: "◧" },
   { to: "/receipts", label: "Receipts", icon: "🧾" },
-  { to: "/chat", label: "Ask Claude", icon: "💬" },
   { to: "/income", label: "Income", icon: "💰" },
   { to: "/mileage", label: "Mileage", auLabel: "Car trips", icon: "🚗" },
   { to: "/deadlines", label: "Deadlines", icon: "📅" },
@@ -73,7 +71,6 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/receipts" element={<Receipts />} />
-            <Route path="/chat" element={<ChatPage />} />
             <Route path="/income" element={<IncomePage />} />
             <Route path="/mileage" element={<MileagePage />} />
             <Route path="/deadlines" element={<Deadlines />} />

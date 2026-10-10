@@ -1,23 +1,22 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { countryOf, PERSONAL_CATEGORY, taxYearBounds } from "./countries";
-import { get, getAll, newId, patch, put } from "./db";
+import { countryOf, PERSONAL_CATEGORY } from "./countries";
+import { get, patch } from "./db";
 import { loadProfile } from "./data";
-import type { ChatMessage, Income, Profile, Receipt, Trip } from "./types";
+import type { Receipt } from "./types";
 
 const MODEL = "claude-opus-5-5";
 // Re-runs a request on Anthropic's recommended model if the primary one declines it.
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
-const MAX_HISTORY = 40;
-const MAX_RECORDS = 400;
 
 export class ClaudeError extends Error {}
 
 /**
- * The app talks to Claude straight from the phone with the user's own key, which is
- * stored only in this device's database. There is no server in between.
+ * Optional: reading receipts automatically. The app calls Claude straight from the
+ * phone with the user's own key, stored only on this device. Without a key the app
+ * works fully and receipt details are typed in by hand.
  */
 function client(apiKey: string): Anthropic {
-  if (!apiKey) throw new ClaudeError("Add your Claude API key in Settings first.");
+  if (!apiKey) throw new ClaudeError("Add a Claude API key in Settings to read receipts automatically.");
   return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 }
 
@@ -39,143 +38,6 @@ function friendlyError(err: unknown): Error {
 export async function testApiKey(apiKey: string): Promise<void> {
   try {
     await client(apiKey).models.retrieve(MODEL);
-  } catch (err) {
-    throw friendlyError(err);
-  }
-}
-
-const money = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n.toFixed(2) : "?");
-const clean = (s: unknown, max = 120) => String(s ?? "").replace(/\s+/g, " ").slice(0, max);
-
-/** A compact plain-text snapshot of the current tax year's records for Claude to read. */
-export async function recordsSnapshot(profile: Profile): Promise<string> {
-  const { start, end, label } = taxYearBounds(profile.country);
-  const country = countryOf(profile.country);
-  const year = country.yearTerm.toLowerCase();
-  const [allReceipts, allIncome, allTrips] = await Promise.all([getAll("receipts"), getAll("income"), getAll("mileage")]);
-  const inYear = <T extends { date: string }>(xs: T[]) =>
-    xs.filter((x) => x.date >= start && x.date <= end).sort((a, b) => b.date.localeCompare(a.date));
-  const receipts = inYear<Receipt>(allReceipts);
-  const income = inYear<Income>(allIncome);
-  const trips = inYear<Trip>(allTrips);
-
-  const byCategory = new Map<string, number>();
-  let expenseTotal = 0;
-  const receiptLines = receipts.slice(0, MAX_RECORDS).map((r) => {
-    const amount = r.amount ?? 0;
-    expenseTotal += amount;
-    const cat = clean(r.category || "Uncategorised", 40);
-    byCategory.set(cat, (byCategory.get(cat) ?? 0) + amount);
-    const labels = r.labels?.length ? ` [${r.labels.map((l) => clean(l, 30)).join(", ")}]` : "";
-    return `- ${r.date} | ${clean(r.merchant, 60) || "Unknown"} | ${money(r.amount)} ${clean(r.currency, 3)} | ${cat}${
-      r.deductible === false ? " | not claimable" : ""
-    }${labels}${r.notes ? ` | note: ${clean(r.notes, 80)}` : ""}`;
-  });
-
-  let incomeTotal = 0;
-  const incomeLines = income.map((r) => {
-    incomeTotal += r.amount ?? 0;
-    return `- ${r.date} | ${clean(r.source, 60)} | ${money(r.amount)} | ${clean(r.type, 30)}${r.taxPaid ? ` | ${country.taxWithheldName.toLowerCase()} ${money(r.taxPaid)}` : ""}`;
-  });
-  const distance = trips.reduce((s, t) => s + (t.distance ?? 0), 0);
-  const cats = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => `  ${c}: ${v.toFixed(2)}`);
-  const undated = allReceipts.filter((r) => !r.date).length;
-
-  return [
-    `${country.yearTerm} ${label} (${start} to ${end}). Home currency ${profile.currency || country.currency}.`,
-    `Receipts stored overall: ${allReceipts.length}${undated ? ` (${undated} with no date yet)` : ""}. In this ${year}: ${receipts.length}, total ${expenseTotal.toFixed(2)}.`,
-    cats.length ? `Expenses by category:\n${cats.join("\n")}` : `No expenses recorded this ${year}.`,
-    `Income this ${year}: ${income.length} entries, total ${incomeTotal.toFixed(2)}.`,
-    `Work car travel this ${year}: ${distance.toFixed(1)} ${profile.distanceUnit} across ${trips.length} trips (rate set: ${profile.mileageRate} per ${profile.distanceUnit === "km" ? "km" : "mile"}).`,
-    receiptLines.length ? `Receipts (newest first${receipts.length > MAX_RECORDS ? `, first ${MAX_RECORDS} only` : ""}):\n${receiptLines.join("\n")}` : "",
-    incomeLines.length ? `Income entries:\n${incomeLines.join("\n")}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-const CHAT_SYSTEM = `You are the assistant inside a personal tax-records app. The user stores receipts, income and mileage in the app and asks you questions about their tax affairs.
-
-How to help:
-- Answer clearly and practically, in plain English, for the user's country (given with each message). Use that country's terminology, tax authority and tax-year dates.
-- Each user message carries a <my_records> snapshot of their data for the current tax year. Use it for anything about their own figures: totals, what's missing, which receipts look claimable, what to tell an accountant. Do arithmetic carefully and say which records you used.
-- Tax rates, thresholds and allowances change every year. When an answer depends on a current figure or deadline, use web search to check it against the official tax authority's site and cite it, rather than relying on memory.
-- Flag likely issues (personal items marked as business costs, missing receipts for big claims, approaching deadlines).
-- You give general information, not regulated tax advice. For high-stakes or complicated situations (disputes, investigations, residency questions, large sums), say so briefly and suggest a qualified accountant or tax adviser — but still give a useful answer first.
-- The user is reading on a phone. Keep replies focused: short paragraphs, bullet lists, and small tables only where they really help. The app renders Markdown.`;
-
-/** Saves the question, asks Claude with the user's records attached, and saves the reply. */
-export async function askClaude(apiKey: string, message: string): Promise<void> {
-  const anthropic = client(apiKey);
-  const [profile, past] = await Promise.all([loadProfile(), getAll("chat")]);
-  const history: Anthropic.Beta.BetaMessageParam[] = past
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .slice(-MAX_HISTORY)
-    .map((m) => ({ role: m.role, content: m.content }));
-  // The API requires the conversation to start with a user turn.
-  while (history.length && history[0].role !== "user") history.shift();
-
-  await put("chat", { id: newId(), role: "user", content: message, createdAt: Date.now() });
-
-  try {
-    const country = countryOf(profile.country);
-    const context = [
-      `<my_details>Country: ${country.name} (tax authority: ${country.authority}). Today: ${new Date().toISOString().slice(0, 10)}.`,
-      profile.situation ? `About me: ${clean(profile.situation, 1000)}` : "",
-      `</my_details>`,
-      `<my_records>\n${await recordsSnapshot(profile)}\n</my_records>`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    const messages: Anthropic.Beta.BetaMessageParam[] = [
-      ...history,
-      { role: "user", content: [{ type: "text", text: context }, { type: "text", text: message }] },
-    ];
-
-    let response: Anthropic.Beta.BetaMessage | undefined;
-    // Web search runs on Anthropic's side; a long search loop can pause and needs resuming.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      response = await anthropic.beta.messages.create({
-        model: MODEL,
-        max_tokens: 16000,
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
-        output_config: { effort: "medium" },
-        system: [{ type: "text", text: CHAT_SYSTEM, cache_control: { type: "ephemeral" } }],
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }],
-        messages,
-      });
-      if (response.stop_reason !== "pause_turn") break;
-      messages.push({ role: "assistant", content: response.content });
-    }
-    if (!response) throw new ClaudeError("No response from Claude.");
-
-    let reply: string;
-    const sources = new Map<string, string>();
-    if (response.stop_reason === "refusal") {
-      reply = "Sorry — I can't help with that request. Try rephrasing it, or ask about a different part of your tax affairs.";
-    } else {
-      const parts: string[] = [];
-      for (const block of response.content) {
-        if (block.type !== "text") continue;
-        parts.push(block.text);
-        for (const c of block.citations ?? []) {
-          if (c.type === "web_search_result_location" && c.url) sources.set(c.url, c.title ?? c.url);
-        }
-      }
-      reply = parts.join("").trim() || "I didn't get an answer back — please try again.";
-      if (response.stop_reason === "max_tokens") reply += "\n\n_(Reply cut short — ask me to continue.)_";
-    }
-
-    const msg: ChatMessage = {
-      id: newId(),
-      role: "assistant",
-      content: reply,
-      sources: [...sources.entries()].slice(0, 8).map(([url, title]) => ({ url, title })),
-      createdAt: Date.now(),
-    };
-    await put("chat", msg);
   } catch (err) {
     throw friendlyError(err);
   }

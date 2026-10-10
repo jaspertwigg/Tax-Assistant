@@ -1064,3 +1064,8 @@ label.btn {
     font-size: 0.85rem;
   }
 }
+
+.summary-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}

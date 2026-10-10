@@ -28,7 +28,7 @@ async function dataUrlToBlob(url: string): Promise<Blob> {
 export async function createBackup(): Promise<Blob> {
   const d = await db();
   const stores: Record<string, unknown[]> = {};
-  for (const name of ["receipts", "income", "mileage", "reminders", "chat"] as const) stores[name] = await d.getAll(name);
+  for (const name of ["receipts", "income", "mileage", "reminders"] as const) stores[name] = await d.getAll(name);
   stores.files = await Promise.all(
     (await d.getAll("files")).map(async (f) => ({
       id: f.id,
@@ -63,7 +63,7 @@ export async function restoreBackup(file: File): Promise<{ receipts: number }> {
   await clearAll(stores);
   const d = await db();
   const tx = d.transaction([...stores, "settings"], "readwrite");
-  for (const name of ["receipts", "income", "mileage", "reminders", "chat"] as const) {
+  for (const name of ["receipts", "income", "mileage", "reminders"] as const) {
     for (const item of backup.stores[name] ?? []) await tx.objectStore(name).put(item as never);
   }
   for (const f of files) await tx.objectStore("files").put(f);
