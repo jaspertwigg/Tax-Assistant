@@ -1,0 +1,114 @@
+import { onAuthStateChanged, User } from "firebase/auth";
+import { useEffect, useMemo, useState } from "react";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { recentTaxYears } from "./lib/countries";
+import { AppContext, currentTaxYear, TaxYear, useProfile } from "./lib/data";
+import { auth, firebaseConfigured } from "./lib/firebase";
+import ChatPage from "./pages/Chat";
+import Dashboard from "./pages/Dashboard";
+import Deadlines from "./pages/Deadlines";
+import IncomePage from "./pages/Income";
+import MileagePage from "./pages/Mileage";
+import Receipts from "./pages/Receipts";
+import SettingsPage from "./pages/Settings";
+import SignIn from "./pages/SignIn";
+
+const NAV = [
+  { to: "/", label: "Overview", icon: "◧" },
+  { to: "/receipts", label: "Receipts", icon: "🧾" },
+  { to: "/chat", label: "Ask Claude", icon: "💬" },
+  { to: "/income", label: "Income", icon: "💰" },
+  { to: "/mileage", label: "Mileage", icon: "🚗" },
+  { to: "/deadlines", label: "Deadlines", icon: "📅" },
+  { to: "/settings", label: "Settings", icon: "⚙" },
+];
+
+export default function App() {
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  useEffect(() => onAuthStateChanged(auth, setUser), []);
+
+  if (!firebaseConfigured) return <SetupNeeded />;
+  if (user === undefined) return <div className="splash">Loading…</div>;
+  if (!user) return <SignIn />;
+  return <SignedIn user={user} />;
+}
+
+function SignedIn({ user }: { user: User }) {
+  const { profile, loaded } = useProfile(user.uid);
+  const [chosenYear, setTaxYear] = useState<TaxYear | null>(null);
+  const years = useMemo(() => recentTaxYears(profile.country), [profile.country]);
+  // Reset to the current year if the country (and so the year boundaries) changes.
+  const taxYear = chosenYear && years.some((y) => y.start === chosenYear.start) ? chosenYear : currentTaxYear(profile);
+
+  if (!loaded) return <div className="splash">Loading…</div>;
+
+  const yearPicker = (
+    <label className="year-picker">
+      <span>Tax year</span>
+      <select value={taxYear.start} onChange={(e) => setTaxYear(years.find((y) => y.start === e.target.value) ?? null)}>
+        {years.map((y) => (
+          <option key={y.start} value={y.start}>
+            {y.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  return (
+    <AppContext.Provider value={{ user, profile, taxYear, setTaxYear }}>
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <img src="/icon.svg" alt="" width={28} height={28} />
+            <span>Tax Assistant</span>
+          </div>
+          {yearPicker}
+          <nav>
+            {NAV.map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.to === "/"}>
+                <span className="nav-icon" aria-hidden>
+                  {n.icon}
+                </span>
+                <span className="nav-label">{n.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        </aside>
+        <main className="content">
+          <div className="mobile-bar">
+            <div className="brand">
+              <img src="/icon.svg" alt="" width={24} height={24} />
+              <span>Tax Assistant</span>
+            </div>
+            {yearPicker}
+          </div>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/receipts" element={<Receipts />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/income" element={<IncomePage />} />
+            <Route path="/mileage" element={<MileagePage />} />
+            <Route path="/deadlines" element={<Deadlines />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </AppContext.Provider>
+  );
+}
+
+function SetupNeeded() {
+  return (
+    <div className="center-card">
+      <div className="card">
+        <h1>Almost there</h1>
+        <p>
+          This app needs a Firebase project. Copy <code>.env.example</code> to <code>.env.local</code>, fill in your Firebase
+          web-app config, and restart the dev server. See the README for the full setup steps.
+        </p>
+      </div>
+    </div>
+  );
+}
